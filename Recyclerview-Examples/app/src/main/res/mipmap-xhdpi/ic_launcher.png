@@ -1,0 +1,115 @@
+package com.innoviti.products.process.kernel.callback;
+
+import android.app.Activity;
+import android.app.Dialog;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
+import android.os.ConditionVariable;
+import android.os.Looper;
+import android.os.SystemClock;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+
+import com.innoviti.products.R;
+import com.innoviti.products.PaxApplication;
+import com.innoviti.products.logger.Logger;
+import com.innoviti.products.preprocess.TransactionBuilder;
+import com.innoviti.products.process.ContextProvider;
+import com.innoviti.products.process.StatusMessage;
+import com.innoviti.products.process.kernel.emv.chip.EmvTestCAPK;
+import com.innoviti.products.process.kernel.emv.ctls.rupay.ClssProcRuPay;
+import com.innoviti.products.process.kernel.emv.util.CardReaderHelper;
+import com.innoviti.products.process.kernel.emv.util.ToastUtil;
+import com.innoviti.products.process.terminal_registration.Device;
+import com.pax.dal.ICardReaderHelper;
+import com.pax.dal.entity.EReaderType;
+import com.pax.dal.entity.PollingResult;
+import com.pax.dal.exceptions.IccDevException;
+import com.pax.dal.exceptions.MagDevException;
+import com.pax.dal.exceptions.PiccDevException;
+import com.pax.jemv.clcommon.CLSS_TORN_LOG_RECORD;
+import com.pax.jemv.clcommon.EMV_CAPK;
+
+import java.util.Arrays;
+
+public class PiccCallback extends TransCallback {
+    public static final int CALLBACK_ERR = -1;
+    public static final int CALLBACK_CANCEL = -2;
+    public static final int CALLBACK_SUCCESS = 0;
+    private static final String TAG = "PiccCallback";
+    private static PiccCallback piccCallback;
+    private Activity activity;
+    private ConditionVariable cv;
+    private Dialog dialog;
+
+    public PiccCallback(Activity activity) {
+        this.activity = activity;
+    }
+
+    public static synchronized PiccCallback getInstance(Activity activity) {
+        if (piccCallback == null) {
+            piccCallback = new PiccCallback(activity);
+        }
+        return piccCallback;
+    }
+
+
+    @Override
+    public int removeCardPrompt() {
+       // cv = new ConditionVariable();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+              /*  Looper.prepare();
+                while (true) {*/
+                    try {
+                        PollingResult result = CardReaderHelper.getInstance().polling(EReaderType.ICC_PICC, 100);
+                        CardReaderHelper.getInstance().stopPolling();
+                        if (result.getReaderType() == EReaderType.ICC || result.getReaderType() == EReaderType.PICC) {
+                            Logger.debug(TAG , "contact less Please remove card");
+                            Device.longBeepSound();
+
+                            ContextProvider.getInstance().getActivity().runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    ToastUtil.showToast(ContextProvider.getInstance().getActivity(), "Please remove card");
+                                }
+                            });
+                        }/* else {
+                            cv.open();
+
+                        }*/
+                    } catch (PiccDevException e) {
+                        e.printStackTrace();
+                        Logger.error(TAG, e.getErrMsg());
+                        cv.open();
+                    } catch (IccDevException e) {
+                        e.printStackTrace();
+                        Logger.error(TAG, e.getErrMsg());
+                        cv.open();
+                    } catch (MagDevException e) {
+                        e.printStackTrace();
+                        Logger.error(TAG, e.getErrMsg());
+                        cv.open();
+                    }
+                }
+           // }
+        }).start();
+       // cv.block();
+        return CALLBACK_SUCCESS;
+    }
+
+    private int callback_ret = CALLBACK_SUCCESS;
+
+    @Override
+    public int displaySeePhone() {
+        removeCardBeforeSeephone();
+        cv = new ConditionVariable();
+        dialog = null;
+        Logger.debug("displaySeePhone", "displaySeePhone start");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                Looper.prepare();
+                while (true) {
+ 
